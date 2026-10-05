@@ -1,6 +1,6 @@
 /* RizqTrack service worker – bikin app bisa dipasang & jalan offline.
    Ganti angka VERSION setiap kali kamu mengubah file app supaya cache diperbarui. */
-const VERSION = 'v1.4.4';
+const VERSION = 'v1.5.0';
 const CACHE = 'rizqtrack-' + VERSION;
 
 const APP_SHELL = [
