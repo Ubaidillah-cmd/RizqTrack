@@ -850,24 +850,10 @@ textarea { resize: vertical; }
 .lock-footer { margin: 1.5rem -0.75rem 0 !important; font-size: 0.72rem !important; color: var(--text3) !important; white-space: nowrap; }
 @media (max-width: 768px) { .app-footer { margin: 1rem 1rem 0; } }
 
-/* ---------- Pull to refresh ---------- */
-/* Matikan pull-to-refresh bawaan browser (yang muncul walau isi halaman sedang di bawah),
-   diganti versi sendiri yang hanya aktif saat halaman benar-benar di posisi paling atas. */
+/* ---------- Cegah refresh tidak sengaja ---------- */
+/* Menonaktifkan tarik-ke-bawah-untuk-refresh bawaan browser (sering muncul saat scroll ke atas di tengah halaman). */
 html, body { overscroll-behavior-y: contain; }
 .page-container { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
-.main-content { position: relative; }
-.ptr {
-  position: absolute; left: 50%; top: 56px; z-index: 120;
-  width: 40px; height: 40px; margin-left: -20px; border-radius: 50%;
-  background: var(--bg3); border: 1px solid var(--border); box-shadow: var(--card-shadow);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--accent); font-size: 1.3rem; font-weight: 700;
-  opacity: 0; transform: translateY(-60px); pointer-events: none;
-}
-.ptr.ready { background: var(--accent); color: #04110e; }
-.ptr.refreshing .ptr-icon { display: inline-block; animation: ptrSpin 0.7s linear infinite; }
-.ptr.animating { transition: transform 0.25s ease, opacity 0.25s ease; }
-@keyframes ptrSpin { to { transform: rotate(360deg); } }
 
 /* ---------- Kode backup ---------- */
 .code-text {
