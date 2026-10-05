@@ -41,7 +41,6 @@ Berjalan langsung di browser tanpa backend dan tanpa database. Semua data disimp
 
 ### 🛡️ Kenyamanan & keamanan
 * 📝 **Draf otomatis**: isian form yang belum disimpan tidak hilang saat halaman di-refresh atau aplikasi ditutup
-* 🔄 Pull-to-refresh: tarik ke bawah dari posisi paling atas halaman
 * 🔐 Kunci PIN 4 digit
 * 🌙 Dark mode / ☀️ Light mode
 * 📱 Responsive untuk HP dan desktop
@@ -102,7 +101,7 @@ RizqTrack dapat dibungkus menjadi APK memakai layanan seperti WebIntoApp dengan 
 
 * Nama dan ikon APK diatur di dashboard layanan pembungkusnya
 * Di APK, unduh file sering tidak didukung, gunakan **Backup Kode** dan **Restore Kode**
-* Jika APK punya opsi *pull to refresh* bawaan, sebaiknya dimatikan karena RizqTrack sudah punya pull-to-refresh sendiri
+* Jika APK punya opsi *pull to refresh* bawaan, sebaiknya dimatikan agar tidak ter-refresh tanpa sengaja saat scroll
 
 ---
 
