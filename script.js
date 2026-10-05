@@ -112,17 +112,12 @@ document.addEventListener('DOMContentLoaded', () => {
   writeDrafts(draftsAtStart);             // reset di atas ikut menghapus draf → tulis ulang
   initDrafts();
   initPWA();
-  initPullToRefresh();
   refreshAll();
   processRecurring();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') { processRecurring(); renderDueReminders(); renderRecurring(); }
   });
-  let startPage = new URLSearchParams(location.search).get('page');
-  try {
-    const back = sessionStorage.getItem('dt_ptr_page');
-    if (back) { sessionStorage.removeItem('dt_ptr_page'); startPage = startPage || back; }
-  } catch (e) {}
+  const startPage = new URLSearchParams(location.search).get('page');
   if (startPage && document.getElementById('page-' + startPage)) navigateTo(startPage);
   updateBackupInfo();
   if (restoredForms.length) setTimeout(() => showToast(`📝 Isian ${restoredForms.join(', ')} yang belum disimpan dipulihkan`, 'success'), 700);
@@ -1571,17 +1566,26 @@ let deferredInstallPrompt = null;
 // Letakkan file APK di folder yang sama dengan index.html dengan nama ini.
 // Kalau filenya ada & dibuka dari HP Android (browser), tombol Pasang langsung mengunduh APK-nya.
 const APK_URL = 'RizqTrack.apk';
-let apkAvailable = false;
+let apkState = 'unknown';   // 'yes' = file ada, 'no' = pasti tidak ada, 'unknown' = belum/tidak bisa dipastikan
+
+function apkEligible() {
+  return /^https?:$/.test(location.protocol) && !isAndroidWebView() && !/iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+// Mode APK dipakai kecuali server SUDAH PASTI tidak punya filenya. Jadi saat pengecekan belum selesai
+// atau gagal (sinyal jelek), tombol tetap langsung mengunduh.
+function apkMode() { return apkEligible() && apkState !== 'no'; }
 
 async function checkApkAvailable() {
-  if (!/^https?:$/.test(location.protocol) || isAndroidWebView() || /iphone|ipad|ipod/i.test(navigator.userAgent)) return;
+  if (!apkEligible()) return;
   try {
     const r = await fetch(APK_URL, { method: 'HEAD', cache: 'no-cache' });
     const type = r.headers.get('content-type') || '';
     const size = parseInt(r.headers.get('content-length') || '0', 10);
-    // Hosting dengan "fallback ke index.html" membalas 200 berisi HTML → bukan APK sungguhan
-    apkAvailable = r.ok && !/text\/html/i.test(type) && (size === 0 || size > 50000);
-  } catch (e) { apkAvailable = false; }
+    // 404, atau hosting "fallback ke index.html" yang membalas HTML → file APK tidak ada
+    if (r.status === 404 || r.status === 410 || /text\/html/i.test(type)) apkState = 'no';
+    else if (r.ok && (size === 0 || size > 50000)) apkState = 'yes';
+    else apkState = 'unknown';
+  } catch (e) { apkState = 'unknown'; }
   updateInstallUI();
 }
 
@@ -1627,7 +1631,7 @@ function updateInstallUI() {
   } else if (!/^https?:$/.test(location.protocol)) {
     status.textContent = 'Pasang aplikasi butuh dibuka lewat https:// atau localhost (bukan file langsung). Upload ke Vercel / GitHub Pages / Netlify, atau pakai Live Server.';
     btn.classList.add('hidden');
-  } else if (apkAvailable) {
+  } else if (apkMode()) {
     const android = /Android/i.test(navigator.userAgent);
     status.textContent = android
       ? 'Ketuk tombol di bawah: RizqTrack.apk langsung terunduh. Setelah selesai, ketuk Buka lalu Instal di notifikasi unduhan.'
@@ -1671,6 +1675,14 @@ function showInstallHelp() {
 }
 function closeInstallHelp() { hideEl('installModal'); }
 
+function apkStartedStatus() {
+  const status = document.getElementById('installStatus');
+  if (status) status.textContent = /Android/i.test(navigator.userAgent)
+    ? '✅ Unduhan dimulai. Setelah selesai, ketuk Buka lalu Instal pada notifikasi unduhan. (Pertama kali: izinkan “sumber tidak dikenal” jika diminta.)'
+    : '✅ Unduhan dimulai. Kirim / buka file RizqTrack.apk di HP Android untuk memasangnya.';
+}
+
+// Langsung mengunduh saat diketuk (tanpa menunggu pengecekan apa pun).
 function downloadApk() {
   const a = document.createElement('a');
   a.href = APK_URL;
@@ -1679,15 +1691,23 @@ function downloadApk() {
   a.click();
   a.remove();
   showToast('⬇️ Mengunduh RizqTrack.apk…', 'success');
-  const status = document.getElementById('installStatus');
-  if (status) status.textContent = /Android/i.test(navigator.userAgent)
-    ? '✅ Unduhan dimulai. Setelah selesai, ketuk Buka lalu Instal pada notifikasi unduhan. (Pertama kali: izinkan “sumber tidak dikenal” jika diminta.)'
-    : '✅ Unduhan dimulai. Kirim / buka file RizqTrack.apk di HP Android untuk memasangnya.';
+  apkStartedStatus();
+  // Verifikasi di belakang layar. Kalau ternyata filenya memang tidak ada di server, beri tahu.
+  if (apkState !== 'yes') {
+    checkApkAvailable().then(() => {
+      if (apkState === 'no') {
+        showToast('❌ File RizqTrack.apk tidak ditemukan di server ini', 'error');
+        showInstallHelp();
+      } else {
+        apkStartedStatus();
+      }
+    });
+  }
 }
 
-// Tombol utama: unduh APK kalau tersedia, kalau tidak pasang lewat browser (PWA)
+// Tombol utama: selalu langsung unduh APK (kecuali server pasti tidak punya filenya)
 function installApp() {
-  if (apkAvailable) { downloadApk(); return; }   // langsung unduh
+  if (apkMode()) { downloadApk(); return; }
   installViaBrowser();                            // tidak ada APK → pasang lewat browser / petunjuk
 }
 
@@ -1710,79 +1730,6 @@ async function installViaBrowser() {
   updateInstallUI();
 }
 
-
-/* ===================== PULL TO REFRESH ===================== */
-// Refresh hanya jika sentuhan DIMULAI saat konten sudah di posisi paling atas, lalu ditarik ke bawah.
-// Kalau sedang di tengah/bawah halaman, scroll ke atas tidak memicu refresh.
-function initPullToRefresh() {
-  const container = document.querySelector('.page-container');
-  const ind = document.getElementById('ptr');
-  const topbar = document.querySelector('.topbar');
-  if (!container || !ind) return;
-
-  const THRESHOLD = 70;   // jarak tarik (px) agar refresh jalan
-  const MAX_PULL = 110;
-  let startY = 0, startX = 0, armed = false, pulling = false, dist = 0, busy = false;
-
-  const blocked = () =>
-    busy ||
-    !document.getElementById('lockScreen').classList.contains('hidden') ||
-    !!document.querySelector('.modal:not(.hidden)') ||
-    document.getElementById('sidebar').classList.contains('open');
-
-  const place = d => {
-    ind.style.top = (topbar ? topbar.offsetHeight : 56) + 'px';
-    ind.style.opacity = Math.min(d / THRESHOLD, 1);
-    ind.style.transform = `translateY(${d - 50}px) rotate(${d * 3}deg)`;
-    ind.classList.toggle('ready', d >= THRESHOLD);
-  };
-  const hide = () => {
-    ind.classList.add('animating');
-    ind.style.opacity = 0;
-    ind.style.transform = 'translateY(-60px)';
-    ind.classList.remove('ready');
-    setTimeout(() => ind.classList.remove('animating'), 260);
-  };
-
-  container.addEventListener('touchstart', e => {
-    armed = false; pulling = false; dist = 0;
-    if (e.touches.length !== 1 || blocked() || container.scrollTop > 0) return;
-    startY = e.touches[0].clientY;
-    startX = e.touches[0].clientX;
-    armed = true;
-  }, { passive: true });
-
-  container.addEventListener('touchmove', e => {
-    if (!armed) return;
-    if (container.scrollTop > 0) { armed = false; if (pulling) { pulling = false; hide(); } return; }
-    const dy = e.touches[0].clientY - startY;
-    const dx = Math.abs(e.touches[0].clientX - startX);
-    if (!pulling) {
-      if (dy < -5) { armed = false; return; }          // gerak ke atas = scroll biasa
-      if (dy > 12 && dy > dx) pulling = true; else return;
-    }
-    dist = Math.min(dy * 0.5, MAX_PULL);
-    if (e.cancelable) e.preventDefault();
-    place(dist);
-  }, { passive: false });
-
-  const end = () => {
-    if (!armed || !pulling) { armed = false; return; }
-    armed = false; pulling = false;
-    if (dist >= THRESHOLD) {
-      busy = true;
-      ind.classList.add('animating', 'refreshing');
-      ind.style.opacity = 1;
-      ind.style.transform = 'translateY(' + (THRESHOLD - 50) + 'px)';
-      try { sessionStorage.setItem('dt_ptr_page', document.querySelector('.page.active')?.id.replace('page-', '') || ''); } catch (e) {}
-      setTimeout(() => location.reload(), 450);
-    } else {
-      hide();
-    }
-  };
-  container.addEventListener('touchend', end, { passive: true });
-  container.addEventListener('touchcancel', () => { if (pulling) hide(); armed = false; pulling = false; }, { passive: true });
-}
 
 /* ===================== SETTINGS ===================== */
 function savePin() {
