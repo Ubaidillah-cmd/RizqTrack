@@ -61,7 +61,7 @@
     </div>
     <ul class="nav-list">
       <li><a href="#" class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span>Dashboard</span></a></li>
-      <li><a href="#" class="nav-item" data-page="tambah"><span class="nav-icon">➕</span><span>Tambah</span></a></li>
+      <li><a href="#" class="nav-item" data-page="tambah"><span class="nav-icon">💸</span><span>Pengeluaran</span></a></li>
       <li><a href="#" class="nav-item" data-page="pemasukan"><span class="nav-icon">💵</span><span>Pemasukan</span></a></li>
       <li><a href="#" class="nav-item" data-page="berulang"><span class="nav-icon">🔁</span><span>Berulang</span></a></li>
       <li><a href="#" class="nav-item" data-page="riwayat"><span class="nav-icon">📋</span><span>Riwayat</span></a></li>
@@ -72,7 +72,7 @@
     </ul>
     <div class="sidebar-footer">
       <button class="theme-toggle" id="themeToggle" title="Toggle tema">🌙</button>
-      <span class="version">v1.5.0</span>
+      <span class="version">v1.7.0</span>
     </div>
   </nav>
 
@@ -174,10 +174,11 @@
       <!-- TAMBAH PAGE -->
       <section class="page" id="page-tambah">
         <div class="page-header">
-          <h1>Tambah Pengeluaran</h1>
+          <h1>Pengeluaran 💸</h1>
           <p class="subtitle">Catat pengeluaranmu sekarang</p>
         </div>
         <div class="form-card">
+          <button class="btn-smart" onclick="openSmart('expense')">✨ Isi Otomatis <span>📷 Foto nota · 🎤 Suara</span></button>
           <div class="form-group">
             <label>Nama Pengeluaran *</label>
             <input type="text" id="inputNama" placeholder="cth: Makan siang, Kopi susu..." />
@@ -265,6 +266,7 @@
 
         <div class="form-card" id="incFormCard">
           <h3 id="incFormTitle">➕ Catat Pemasukan</h3>
+          <button class="btn-smart" onclick="openSmart('income')">✨ Isi Otomatis <span>📷 Foto uang / bukti transfer · 🎤 Suara</span></button>
           <div class="form-group">
             <label>Nama Pemasukan *</label>
             <input type="text" id="incNama" placeholder="cth: Gaji September, Uang saku mingguan..." />
@@ -375,8 +377,17 @@
       <!-- RIWAYAT PAGE -->
       <section class="page" id="page-riwayat">
         <div class="page-header">
-          <h1>Riwayat Pengeluaran</h1>
-          <p class="subtitle">Semua catatan pengeluaranmu</p>
+          <h1>Riwayat Transaksi</h1>
+          <p class="subtitle">Semua catatan pemasukan dan pengeluaranmu</p>
+        </div>
+
+        <div class="riwayat-toolbar">
+          <div class="seg riwayat-seg" id="riwayatSeg">
+            <button class="seg-btn active" data-jenis="semua" onclick="setRiwayatJenis('semua')">Semua</button>
+            <button class="seg-btn" data-jenis="pengeluaran" onclick="setRiwayatJenis('pengeluaran')">📤 Pengeluaran</button>
+            <button class="seg-btn" data-jenis="pemasukan" onclick="setRiwayatJenis('pemasukan')">📥 Pemasukan</button>
+          </div>
+          <button class="btn-outline btn-print" onclick="printRiwayat()">🖨️ Cetak</button>
         </div>
 
         <!-- Filter Bar -->
@@ -390,18 +401,6 @@
           <div class="filter-right">
             <select id="filterKategori" onchange="applyFilter()">
               <option value="">Semua Kategori</option>
-              <option value="Makan">🍽️ Makan</option>
-              <option value="Bensin">⛽ Bensin</option>
-              <option value="Kopi">☕ Kopi</option>
-              <option value="Jajan">🍿 Jajan</option>
-              <option value="Transportasi">🚗 Transportasi</option>
-              <option value="Tagihan">📱 Tagihan</option>
-              <option value="Belanja">🛒 Belanja</option>
-              <option value="Rokok">🚬 Rokok</option>
-              <option value="Skincare">🧴 Skincare</option>
-              <option value="Pakaian">👕 Pakaian</option>
-              <option value="Lainnya">📦 Lainnya</option>
-              <option value="Wishlist">🎁 Wishlist</option>
             </select>
             <select id="filterSort" onchange="applyFilter()">
               <option value="terbaru">Terbaru</option>
@@ -698,7 +697,7 @@
           </div>
         </div>
 
-        <p class="app-info">RizqTrack v1.5.0 • Dibuat dengan ❤️ untuk keuangan sehat</p>
+        <p class="app-info">RizqTrack v1.7.0 • Dibuat dengan ❤️ untuk keuangan sehat</p>
       </section>
 
       <footer class="app-footer">Development by <b>ABD. Rohman Ubaidillah, S.Kom</b></footer>
@@ -756,6 +755,43 @@
     <div class="form-actions">
       <button class="btn-secondary" onclick="closeModal()">Batal</button>
       <button class="btn-primary" onclick="updateExpense()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Isi Otomatis (foto & suara) -->
+<div id="smartModal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeSmart()"></div>
+  <div class="modal-card smart-card">
+    <div class="modal-header">
+      <h3>✨ Isi Otomatis</h3>
+      <button onclick="closeSmart()">✕</button>
+    </div>
+    <div class="seg" id="smartSeg">
+      <button class="seg-btn active" data-type="expense" onclick="setSmartType('expense')">📤 Pengeluaran</button>
+      <button class="seg-btn" data-type="income" onclick="setSmartType('income')">📥 Pemasukan</button>
+    </div>
+    <div class="smart-actions">
+      <button class="btn-outline" id="smartMicBtn" onclick="smartVoiceToggle()">🎤 Bicara</button>
+      <button class="btn-outline" onclick="document.getElementById('smartCam').click()">📷 Foto</button>
+      <button class="btn-outline" onclick="document.getElementById('smartGallery').click()">🖼️ Galeri</button>
+    </div>
+    <input type="file" id="smartCam" accept="image/*" capture="environment" style="display:none" onchange="smartFile(event)" />
+    <input type="file" id="smartGallery" accept="image/*" style="display:none" onchange="smartFile(event)" />
+    <div id="smartPreviewWrap" class="smart-preview hidden"><img id="smartPreview" alt="Pratinjau foto" /></div>
+    <div id="smartProgress" class="hidden">
+      <div class="progress-track"><div class="progress-fill" id="smartProgressBar" style="width:3%"></div></div>
+      <p class="setting-desc" id="smartProgressText"></p>
+    </div>
+    <label class="smart-label">Teks dari suara / foto (boleh diketik atau diedit)</label>
+    <textarea id="smartText" class="smart-text" spellcheck="false" placeholder="cth: Tanggal 2 Oktober 2026 beli kopi susu lima belas ribu, deskripsi sama teman"></textarea>
+    <div id="smartCash" class="smart-cash hidden">💵 Jumlah lembar <input type="number" id="smartLembar" min="1" value="1" /> × <b id="smartDenom"></b></div>
+    <div id="smartSummary" class="smart-summary"></div>
+    <label class="smart-auto"><input type="checkbox" id="smartAuto" /> ⚡ Langsung simpan kalau data sudah lengkap</label>
+    <p class="setting-desc" id="smartHint"></p>
+    <div class="form-actions">
+      <button class="btn-secondary" onclick="closeSmart()">Batal</button>
+      <button class="btn-primary" id="smartApplyBtn" onclick="smartApply()">✨ Isi Form</button>
     </div>
   </div>
 </div>
@@ -818,6 +854,8 @@
   </div>
 </div>
 
+<div id="printArea" aria-hidden="true"></div>
 <script src="script.js"></script>
+<script src="smart.js"></script>
 </body>
 </html>
