@@ -15,6 +15,8 @@ let rcEditingId = null;
 let incomeChart = null;
 let settings = { saldoAwal: 0, saldoSekarang: 0, pin: '', theme: 'dark' };
 let currentFilter = 'semua';
+let riwayatJenis = 'semua';          // 'semua' | 'pengeluaran' | 'pemasukan'
+let riwayatView = { list: [], jenis: 'semua', period: 'semua', cat: '', search: '' };   // tampilan terakhir (dipakai untuk cetak)
 let editingId = null;
 let confirmCallback = null;
 let weeklyChart = null;
@@ -103,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setDefaultDate();
   initNavigation();
   initFilterBtns();
+  fillRiwayatCategories();
   initSeeAll();
   updateDarkModeToggle();
   const draftsAtStart = readDrafts();     // diambil sebelum form di-reset
@@ -111,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const restoredForms = restoreDrafts(draftsAtStart);
   writeDrafts(draftsAtStart);             // reset di atas ikut menghapus draf → tulis ulang
   initDrafts();
+  initNoNativeRefresh();
   initPWA();
   refreshAll();
   processRecurring();
@@ -227,7 +231,7 @@ function navigateTo(page) {
   const pageEl = document.getElementById(`page-${page}`);
   if (pageEl) pageEl.classList.add('active');
   document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
-  const titles = { dashboard: 'Dashboard', tambah: 'Tambah Pengeluaran', riwayat: 'Riwayat', statistik: 'Statistik', target: 'Target Keuangan', wishlist: 'Wishlist', pemasukan: 'Pemasukan', berulang: 'Transaksi Berulang', pengaturan: 'Pengaturan' };
+  const titles = { dashboard: 'Dashboard', tambah: 'Pengeluaran', riwayat: 'Riwayat Transaksi', statistik: 'Statistik', target: 'Target Keuangan', wishlist: 'Wishlist', pemasukan: 'Pemasukan', berulang: 'Transaksi Berulang', pengaturan: 'Pengaturan' };
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if (page === 'statistik') setTimeout(renderCharts, 100);
   if (page === 'riwayat') renderRiwayat();
@@ -535,17 +539,45 @@ function initFilterBtns() {
   });
 }
 
+const EXPENSE_CAT_LIST = ['Makan', 'Bensin', 'Kopi', 'Jajan', 'Transportasi', 'Tagihan', 'Belanja', 'Rokok', 'Skincare', 'Pakaian', 'Lainnya', 'Wishlist'];
+const MONTH_FULL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+// Daftar kategori mengikuti jenis yang dipilih. Nilai diberi awalan e: / i: karena "Lainnya" ada di kedua jenis.
+function fillRiwayatCategories() {
+  const sel = document.getElementById('filterKategori');
+  if (!sel) return;
+  const prev = sel.value;
+  const exp = EXPENSE_CAT_LIST.map(c => `<option value="e:${c}">${getCatIcon(c)} ${c}</option>`).join('');
+  const inc = Object.keys(INCOME_CATS).map(c => `<option value="i:${c}">${getIncomeIcon(c)} ${c}</option>`).join('');
+  let opts = '<option value="">Semua Kategori</option>';
+  if (riwayatJenis === 'pengeluaran') opts += exp;
+  else if (riwayatJenis === 'pemasukan') opts += inc;
+  else opts += `<optgroup label="📤 Pengeluaran">${exp}</optgroup><optgroup label="📥 Pemasukan">${inc}</optgroup>`;
+  sel.innerHTML = opts;
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;   // pertahankan pilihan kalau masih berlaku
+}
+
+function setRiwayatJenis(j) {
+  riwayatJenis = j;
+  document.querySelectorAll('#riwayatSeg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.jenis === j));
+  fillRiwayatCategories();
+  applyFilter();
+}
+
 function applyFilter() {
   const now = new Date();
   const todayStr = toDateStr(now);
   const monday = getMonday(now);
-  const search = document.getElementById('searchInput')?.value.toLowerCase() || '';
-  const cat = document.getElementById('filterKategori')?.value || '';
+  const search = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
+  const catVal = document.getElementById('filterKategori')?.value || '';
   const sort = document.getElementById('filterSort')?.value || 'terbaru';
 
-  let filtered = [...expenses];
+  // Gabungkan pengeluaran + pemasukan sesuai jenis yang dipilih
+  let filtered = [];
+  if (riwayatJenis !== 'pemasukan') filtered.push(...expenses.map(x => ({ ...x, kind: 'expense' })));
+  if (riwayatJenis !== 'pengeluaran') filtered.push(...incomes.map(x => ({ ...x, kind: 'income' })));
 
-  // Time filter
+  // Waktu
   if (currentFilter === 'hari') filtered = filtered.filter(e => e.date === todayStr);
   else if (currentFilter === 'minggu') filtered = filtered.filter(e => new Date(e.date) >= monday && new Date(e.date) <= now);
   else if (currentFilter === 'bulan') filtered = filtered.filter(e => {
@@ -553,21 +585,32 @@ function applyFilter() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
 
-  // Category filter
-  if (cat) filtered = filtered.filter(e => e.category === cat);
+  // Kategori
+  if (catVal) {
+    const kind = catVal.startsWith('i:') ? 'income' : 'expense';
+    const cat = catVal.slice(2);
+    filtered = filtered.filter(e => e.kind === kind && e.category === cat);
+  }
 
-  // Search
+  // Pencarian
   if (search) filtered = filtered.filter(e =>
     e.name.toLowerCase().includes(search) ||
     e.category.toLowerCase().includes(search) ||
     (e.note || '').toLowerCase().includes(search)
   );
 
-  // Sort
-  if (sort === 'terbesar') filtered.sort((a,b) => b.amount - a.amount);
-  else if (sort === 'terkecil') filtered.sort((a,b) => a.amount - b.amount);
-  else filtered.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  // Urutan
+  const byDate = (a, b) => b.date.localeCompare(a.date) || new Date(b.createdAt) - new Date(a.createdAt);
+  if (sort === 'terbesar') filtered.sort((a, b) => b.amount - a.amount);
+  else if (sort === 'terkecil') filtered.sort((a, b) => a.amount - b.amount);
+  else filtered.sort(byDate);
 
+  const catSel = document.getElementById('filterKategori');
+  riwayatView = {
+    list: filtered, jenis: riwayatJenis, period: currentFilter,
+    cat: catVal ? catSel.options[catSel.selectedIndex].textContent.trim() : '',
+    search: document.getElementById('searchInput')?.value.trim() || ''
+  };
   renderRiwayatList(filtered);
 }
 
@@ -575,14 +618,148 @@ function renderRiwayat() {
   applyFilter();
 }
 
-function renderRiwayatList(list) {
-  renderTxList('riwayatList', list);
-  const total = sumExpenses(list);
-  const summary = document.getElementById('riwayatSummary');
-  if (summary) {
-    summary.innerHTML = `<span>${list.length} transaksi</span><span>Total: <b>${formatRp(total)}</b></span>`;
-  }
+function historyRow(x) {
+  const inc = x.kind === 'income';
+  const icon = inc ? getIncomeIcon(x.category) : getCatIcon(x.category);
+  const label = inc ? escHtml(x.category) : getCatLabel(x.category);
+  return `
+    <div class="tx-card" id="tx-${x.kind}-${x.id}">
+      <div class="tx-icon">${icon}</div>
+      <div class="tx-info">
+        <div class="tx-name">${escHtml(x.name)}${x.recurringId ? ' <span class="rc-tag">🔁</span>' : ''}</div>
+        <div class="tx-meta">${label} · ${formatDateShort(x.date)}${x.note ? ' · ' + escHtml(x.note) : ''}</div>
+      </div>
+      <div class="tx-amount ${inc ? 'income' : ''}">${inc ? '+' : '-'}${formatRp(x.amount)}</div>
+      <div class="tx-actions">
+        <button class="tx-btn" onclick="riwayatEdit('${x.kind}','${x.id}')" title="Edit">✏️</button>
+        <button class="tx-btn del" onclick="riwayatDelete('${x.kind}','${x.id}')" title="Hapus">🗑️</button>
+      </div>
+    </div>`;
 }
+
+function renderRiwayatList(list) {
+  const box = document.getElementById('riwayatList');
+  if (box) {
+    box.innerHTML = list.length
+      ? list.map(historyRow).join('')
+      : `<div class="empty-state"><div class="empty-icon">📭</div><p>${riwayatJenis === 'pemasukan' ? 'Belum ada pemasukan' : riwayatJenis === 'pengeluaran' ? 'Belum ada pengeluaran' : 'Belum ada transaksi'}</p></div>`;
+  }
+  const totalIn = sumExpenses(list.filter(x => x.kind === 'income'));
+  const totalOut = sumExpenses(list.filter(x => x.kind === 'expense'));
+  const net = totalIn - totalOut;
+  const summary = document.getElementById('riwayatSummary');
+  if (!summary) return;
+  const count = `<span>${list.length} transaksi</span>`;
+  if (riwayatJenis === 'pengeluaran') summary.innerHTML = `${count}<span>Total pengeluaran: <b class="neg">-${formatRp(totalOut)}</b></span>`;
+  else if (riwayatJenis === 'pemasukan') summary.innerHTML = `${count}<span>Total pemasukan: <b class="pos">+${formatRp(totalIn)}</b></span>`;
+  else summary.innerHTML = `${count}<span>Masuk: <b class="pos">+${formatRp(totalIn)}</b></span><span>Keluar: <b class="neg">-${formatRp(totalOut)}</b></span><span>Selisih: <b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '-'}${formatRp(Math.abs(net))}</b></span>`;
+}
+
+// Edit / hapus dari Riwayat: pengeluaran lewat jendela edit, pemasukan lewat formnya di halaman Pemasukan
+function riwayatEdit(kind, id) {
+  if (kind === 'income') { navigateTo('pemasukan'); editIncome(id); }
+  else openEditModal(id);
+}
+function riwayatDelete(kind, id) {
+  if (kind === 'income') deleteIncome(id);
+  else deleteExpense(id);
+}
+
+/* ---------- Cetak riwayat ---------- */
+const dateFull = iso => { const [y, m, d] = iso.split('-').map(Number); return `${d} ${MONTH_NAMES[m - 1]} ${y}`; };
+
+function riwayatMeta() {
+  const now = new Date();
+  const today = toDateStr(now);
+  const v = riwayatView;
+  let period = 'Semua waktu';
+  if (v.period === 'hari') period = `Hari ini (${dateFull(today)})`;
+  else if (v.period === 'minggu') period = `Minggu ini (${dateFull(toDateStr(getMonday(now)))} s/d ${dateFull(today)})`;
+  else if (v.period === 'bulan') period = `Bulan ini (${MONTH_FULL[now.getMonth()]} ${now.getFullYear()})`;
+  const jenis = v.jenis === 'pengeluaran' ? 'Pengeluaran saja' : v.jenis === 'pemasukan' ? 'Pemasukan saja' : 'Pemasukan & Pengeluaran';
+  return { period, jenis, cat: v.cat, search: v.search, printed: now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) };
+}
+
+function buildPrintHtml() {
+  const v = riwayatView, m = riwayatMeta();
+  const totalIn = sumExpenses(v.list.filter(x => x.kind === 'income'));
+  const totalOut = sumExpenses(v.list.filter(x => x.kind === 'expense'));
+  const net = totalIn - totalOut;
+  const rows = v.list.map((x, i) => `
+      <tr>
+        <td class="c">${i + 1}</td>
+        <td class="nw">${dateFull(x.date)}</td>
+        <td><b>${escHtml(x.name)}</b>${x.note ? `<br><small>${escHtml(x.note)}</small>` : ''}</td>
+        <td>${escHtml(x.category)}</td>
+        <td class="r">${x.kind === 'income' ? formatRp(x.amount) : ''}</td>
+        <td class="r">${x.kind === 'expense' ? formatRp(x.amount) : ''}</td>
+      </tr>`).join('');
+  const info = [['Periode', m.period], ['Jenis', m.jenis]];
+  if (m.cat) info.push(['Kategori', m.cat]);
+  if (m.search) info.push(['Pencarian', `“${m.search}”`]);
+  return `
+    <div class="pr-head">
+      <div><div class="pr-brand">RizqTrack</div><h1>Laporan Riwayat Transaksi</h1></div>
+      <div class="pr-printed">Dicetak<br>${escHtml(m.printed)}</div>
+    </div>
+    <table class="pr-info">${info.map(([k, val]) => `<tr><td>${k}</td><td>: ${escHtml(val)}</td></tr>`).join('')}</table>
+    <table class="pr-table">
+      <thead><tr><th class="c">No</th><th>Tanggal</th><th>Keterangan</th><th>Kategori</th><th class="r">Pemasukan</th><th class="r">Pengeluaran</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <table class="pr-total">
+      ${v.jenis !== 'pengeluaran' ? `<tr><td>Total Pemasukan</td><td class="r">${formatRp(totalIn)}</td></tr>` : ''}
+      ${v.jenis !== 'pemasukan' ? `<tr><td>Total Pengeluaran</td><td class="r">${formatRp(totalOut)}</td></tr>` : ''}
+      ${v.jenis === 'semua' ? `<tr class="sel"><td>Selisih (Pemasukan − Pengeluaran)</td><td class="r">${net < 0 ? '-' : ''}${formatRp(Math.abs(net))}</td></tr>` : ''}
+    </table>
+    <div class="pr-foot">${v.list.length} transaksi · dibuat oleh RizqTrack</div>`;
+}
+
+// Versi teks (untuk APK/WebView yang tidak punya dialog cetak): bisa disalin lalu ditempel ke dokumen
+function riwayatTextReport() {
+  const v = riwayatView, m = riwayatMeta();
+  const totalIn = sumExpenses(v.list.filter(x => x.kind === 'income'));
+  const totalOut = sumExpenses(v.list.filter(x => x.kind === 'expense'));
+  const lines = ['RIZQTRACK - LAPORAN RIWAYAT TRANSAKSI', `Periode : ${m.period}`, `Jenis   : ${m.jenis}`];
+  if (m.cat) lines.push(`Kategori: ${m.cat}`);
+  if (m.search) lines.push(`Cari    : ${m.search}`);
+  lines.push(`Dicetak : ${m.printed}`, '');
+  v.list.forEach((x, i) => lines.push(`${i + 1}. ${dateFull(x.date)} | ${x.kind === 'income' ? 'MASUK ' : 'KELUAR'} | ${x.name} | ${x.category} | ${x.kind === 'income' ? '+' : '-'}${formatRp(x.amount)}${x.note ? ' | ' + x.note : ''}`));
+  lines.push('');
+  if (v.jenis !== 'pengeluaran') lines.push(`Total Pemasukan  : ${formatRp(totalIn)}`);
+  if (v.jenis !== 'pemasukan') lines.push(`Total Pengeluaran: ${formatRp(totalOut)}`);
+  if (v.jenis === 'semua') lines.push(`Selisih          : ${totalIn - totalOut < 0 ? '-' : ''}${formatRp(Math.abs(totalIn - totalOut))}`);
+  return lines.join('\n');
+}
+
+function endPrint() {
+  document.body.classList.remove('printing');
+  const area = document.getElementById('printArea');
+  if (area) area.innerHTML = '';
+}
+
+function printRiwayat() {
+  if (!riwayatView.list.length) { showToast('Tidak ada transaksi untuk dicetak', 'warning'); return; }
+  if (isAndroidWebView()) {
+    // WebView Android tidak punya dialog cetak → tampilkan laporan sebagai teks yang bisa disalin
+    const text = riwayatTextReport();
+    showCodeModal({
+      title: '🖨️ Laporan Riwayat',
+      desc: 'Cetak langsung belum didukung di aplikasi Android. Salin laporan ini ke Catatan / WhatsApp / Google Docs, atau buka RizqTrack lewat Chrome untuk mencetak ke printer atau menyimpan sebagai PDF.',
+      text, readOnly: true,
+      meta: `${riwayatView.list.length} transaksi`,
+      buttons: [
+        { label: 'Tutup', cls: 'btn-secondary', fn: closeCodeModal },
+        { label: '📋 Salin', cls: 'btn-primary', fn: () => copyCodeText('✅ Laporan tersalin!') }
+      ]
+    });
+    return;
+  }
+  document.getElementById('printArea').innerHTML = buildPrintHtml();
+  document.body.classList.add('printing');
+  setTimeout(() => window.print(), 80);
+}
+window.addEventListener('afterprint', endPrint);
 
 /* ===================== STATISTIK ===================== */
 function renderCharts() {
@@ -1587,6 +1764,21 @@ async function checkApkAvailable() {
     else apkState = 'unknown';
   } catch (e) { apkState = 'unknown'; }
   updateInstallUI();
+}
+
+// Di APK (WebView), pembungkus aplikasi sering memasang "tarik untuk refresh" bawaan Android yang tidak bisa dimatikan lewat kode.
+// Pemicunya: seluruh halaman ini tidak pernah bergulir (hanya kotak isi di dalamnya), jadi Android mengira halaman SELALU di
+// posisi paling atas dan me-refresh pada tarikan ke bawah apa pun. Selama halaman tergeser >= 1px, Android menganggapnya
+// tidak di paling atas, sehingga refresh bawaan tidak terpicu. Hanya aktif di APK; browser biasa tidak terpengaruh.
+function initNoNativeRefresh() {
+  if (!isAndroidWebView()) return;
+  document.documentElement.classList.add('anchor-scroll');   // CSS memberi ruang gulir ekstra beberapa piksel
+  const anchor = () => { if (window.scrollY < 1) window.scrollTo({ top: 1, left: 0, behavior: 'instant' }); };
+  ['scroll', 'resize', 'orientationchange', 'pageshow', 'focus'].forEach(ev => window.addEventListener(ev, anchor, { passive: true }));
+  document.addEventListener('visibilitychange', anchor);
+  anchor();
+  setTimeout(anchor, 300);
+  setTimeout(anchor, 1200);
 }
 
 function initPWA() {
